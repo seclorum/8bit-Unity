@@ -142,7 +142,3 @@ utils\java\bin\java -jar utils\scripts\apple\AppleCommander-1.6.0.jar -p build/s
 utils\java\bin\java -jar utils\scripts\apple\AppleCommander-1.6.0.jar -p build/slicks-apple64k.do STADIUM.NAV bin < projects/slicks/navigation/stadium.nav
 
 echo DONE
-pause
-
-cd "utils\emulators\AppleWin-1.26.3.1"
-Applewin.exe -d1 "..\..\..\build\slicks-apple64k.do"

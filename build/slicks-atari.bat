@@ -121,7 +121,3 @@ copy utils\scripts\atari\xbios.cfg build\atari\xbios.cfg
 utils\scripts\atari\dir2atr.exe -d -B utils/scripts/atari/xboot.obx 1440 build/slicks-atari.atr build\atari
 
 echo DONE
-pause
-
-cd "utils\emulators\Altirra-3.20"
-Altirra.exe "..\..\..\build\slicks-atari.atr"

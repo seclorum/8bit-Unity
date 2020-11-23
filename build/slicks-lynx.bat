@@ -285,7 +285,3 @@ utils\cc65\bin\cl65 -o build/slicks-lynx.lnx -m build/slicks-lynx.map -Cl -O -t 
 
 echo DONE!
 
-pause
-
-cd "utils\emulators\Handy-0.98-Hub"
-handy.exe "..\..\..\build\slicks-lynx.lnx"

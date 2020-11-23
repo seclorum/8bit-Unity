@@ -142,7 +142,3 @@ set TAP2DSK=%TAP2DSK% build/slicks-oric48k.dsk
 utils\scripts\oric\old2mfm.exe build/slicks-oric48k.dsk
 
 echo DONE
-rem pause
-
-rem cd "utils\emulators\Oricutron-1.2-Hub"
-rem oricutron.exe -d "..\..\..\build\slicks-oric48k.dsk"

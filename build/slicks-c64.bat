@@ -112,7 +112,3 @@ for /f "tokens=*" %%A in (build\c64\chunks.lst) do set C1541=!C1541!-write %%A %
 
 
 echo DONE
-pause
-
-cd "utils\emulators\WinVICE-2.4"
-x64.exe "..\..\..\build\slicks-c64.d64"
