@@ -1,8 +1,16 @@
 
-// Memory tweaks
-#if defined __ATARI__
-	#undef  MUSICRAM
-	#define MUSICRAM (0x9800)	// Moved Music RAM start to allow more space for sprites	
+#include "unity.h"
+
+// Screen cropping around charmap
+#if defined (__APPLE2__) || defined(__ORIC__)
+	#define CROP_X  4	// Crop more for platforms that run in HIRES
+	#define CROP_Y  3
+#elif defined __LYNX__
+	#define CROP_X  2	
+	#define CROP_Y  0	// Lynx has only 17 lines (vs. 25 on other platforms)
+#else
+	#define CROP_X  2
+	#define CROP_Y  2
 #endif
 
 // Player Motion
@@ -17,6 +25,9 @@
 	#define STEP_X  3
 	#define STEP_Y  2 
 #endif
+
+// Sprite definitions
+#define spriteFrames 32
 
 // Sprite slot assignments
 #if defined __ATARI__	
@@ -68,7 +79,7 @@
 #define STANCE_LEFT	   4
 
 // Actor data
-# define ACTOR_NUM   12
+# define ACTOR_NUM   16
 
 # define ACTOR_NULL   0
 # define ACTOR_GUARD  1
@@ -96,6 +107,25 @@
 #define TILE_GATE_SHUTL	38
 #define TILE_GATE_SHUTR	39
 
+// Actor variables (Enemies/Items)
+typedef struct {
+	unsigned char state, color, health;
+	unsigned char key, stance, frame;
+	unsigned char mapX, mapY;
+	unsigned int scrX, scrY;
+	clock_t timer;
+} Actor;
+
+// Actor functions (actors.c)
+void LoadActors(const char* filename);
+void ProcessActors(void);
+unsigned char CheckActorCollision(unsigned int scrX, unsigned int scrY, unsigned char flag);
+unsigned char FindActorSlot(void);
+void GenerateMonster(unsigned char mapX, unsigned char mapY);
+void GenerateReward(unsigned char mapX, unsigned char mapY);
+void DamageMonster(Actor* actor);
+void PickupReward(Actor* actor);
+
 // GUI functions (interface.c)
 void SplashScreen(void);
 void PrintHealth(void);
@@ -103,3 +133,7 @@ void PrintArmor(void);
 void PrintGold(void);
 void PrintKills(void);
 void PrintKey(void);
+
+// Player functions (player.c)
+void ProcessPlayer(void);
+void ProcessWeapon(void);
