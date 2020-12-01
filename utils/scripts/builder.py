@@ -28,7 +28,7 @@ from Tkinter import *
 import tkMessageBox as messagebox
 from tkFileDialog import askopenfilename, asksaveasfilename
 from PIL import Image, ImageTk
-import os, pickle, pygubu, sys
+import os, pickle, pygubu, sys, collections, json, codecs
 
 # Useful functions
 def Str2Bool(v):
@@ -37,6 +37,9 @@ def Str2Bool(v):
 def FileBase(filepath, suffix):
     # Return asset file base
     return os.path.basename(filepath).lower().replace(suffix, '')
+
+# Constants
+PROJECT_FILE_FORMATS = (("Project files","*.builder"), )
 
 # Defaults options
 useGUI = True
@@ -178,6 +181,8 @@ class Application:
         self.entry_LynxSpriteFrames = self.builder.get_object('Entry_LynxSpriteFrames')
         self.entry_LynxSpriteWidth = self.builder.get_object('Entry_LynxSpriteWidth')
         self.entry_LynxSpriteHeight = self.builder.get_object('Entry_LynxSpriteHeight')
+        self.entry_LynxMusicMemory = self.builder.get_object('Entry_LynxMusicMemory')
+        self.entry_LynxSharedMemory = self.builder.get_object('Entry_LynxSharedMemory')
         
         self.listbox_OricBitmap = self.builder.get_object('Listbox_OricBitmap')        
         self.listbox_OricCharset = self.builder.get_object('Listbox_OricCharset')        
@@ -187,13 +192,12 @@ class Application:
         self.entry_OricSpriteFrames = self.builder.get_object('Entry_OricSpriteFrames')
         self.entry_OricSpriteWidth = self.builder.get_object('Entry_OricSpriteWidth')
         self.entry_OricSpriteHeight = self.builder.get_object('Entry_OricSpriteHeight')
+        self.entry_OricEnforcedColors = self.builder.get_object('Entry_OricEnforcedColors')
         self.entry_OricDithering = self.builder.get_object('Entry_OricDithering')
-        self.combobox_OricImageQuality = self.builder.get_object('Combobox_OricImageQuality')
                 
         # Set some defaults
         self.Checkbutton_AtariNoText.state(['!selected'])
         self.Combobox_AtariDiskSize.current(0)
-        self.combobox_OricImageQuality.current(1)
 
         # Make lists of various GUI inputs (adding new inputs to the end of each list will guarantee backward compatibility)
         self.entries = [ self.entry_Disk, 
@@ -202,7 +206,8 @@ class Application:
                          self.entry_C64SpriteFrames,   self.entry_C64SpriteWidth,   self.entry_C64SpriteHeight, 
                          self.entry_LynxSpriteFrames,  self.entry_LynxSpriteWidth,  self.entry_LynxSpriteHeight, 
                          self.entry_OricSpriteFrames,  self.entry_OricSpriteWidth,  self.entry_OricSpriteHeight,
-                         self.entry_OricDithering ]
+                         self.entry_OricDithering,     self.entry_LynxMusicMemory,  self.entry_LynxSharedMemory,
+                         self.entry_OricEnforcedColors ]
         self.listboxes = [ self.listbox_Code, 
                            self.listbox_AppleBitmap,  self.listbox_AppleSprites, self.listbox_AppleMusic,
                            self.listbox_AtariBitmap,  self.listbox_AtariSprites, self.listbox_AtariMusic,
@@ -216,7 +221,7 @@ class Application:
                            self.listbox_LynxCharset,  self.listbox_OricCharset,
                            self.listbox_Charmap ]
         self.checkbuttons = [ self.Checkbutton_AtariNoText ]
-        self.comboboxes = [ self.Combobox_AtariDiskSize, self.combobox_OricImageQuality ]
+        self.comboboxes = [ self.Combobox_AtariDiskSize ]
                        
     def FileNew(self):
         # Reset all fields
@@ -227,13 +232,29 @@ class Application:
         
     def FileLoad(self, filename=''):
         if filename == '':
-            filename = askopenfilename(initialdir = "../../", title = "Load Builder Project", filetypes = (("Project files","*.builder"),)) 
+            filename = askopenfilename(initialdir = "../../", title = "Load Builder Project", filetypes = PROJECT_FILE_FORMATS) 
         if filename is not '':
             # Reset UI
             for l in self.listboxes:
                 l.delete(0, END)
             self.entry_Disk.delete(0, END)
             self.entry_Disk.insert(0, 'diskname')
+
+            # Try to open as JSON:
+            json_tree = None
+            try:
+                with codecs.open(filename, "r", "utf-8") as fp:
+                    json_tree = json.load(fp)
+            except ValueError as e:
+                # Not a valid JSON
+                pass
+
+            if json_tree:
+                # It is a JSON file: try to load it
+                self.FileLoadJson(json_tree)                
+                return
+
+            # It's not a JSON file: assumes it is a pickle file
         
             # Unpickle data
             with open(filename, "r") as fp:
@@ -281,45 +302,152 @@ class Application:
                     data = pickle.load(fp)
                     item.set(data)
                     
+    def FileLoadJson(self, json_tree):
+        def process_node(child, template):
+            for k, v in template:
+                if isinstance(v, tuple) and (k in child):
+                    (kind, component) = v
+                    kind = kind.lower()
+                    data = child[k]
+
+                    if kind == 'entry':
+                        component.delete(0, END)
+                        component.insert(0, data)
+                    elif kind == 'listbox':
+                        component.delete(0, END)
+                        for row in data:
+                            component.insert(END, row)
+                    elif kind == 'checkbutton':
+                        if data:
+                            component.state(('selected',))
+                        else:
+                            component.state(('!selected',))
+                    elif kind == 'combobox':
+                        component.set(data)
+                elif k in child:
+                    process_node(child[k], v)
+
+        structure_template = self.JsonStructureTemplate()
+        process_node(json_tree, structure_template)
+
     def FileSave(self):
-        filename = asksaveasfilename(initialdir = "../../", title = "Save Builder Project", filetypes = (("Project files","*.builder"),))
-        if filename is not '':
-            # Fix extension
-            if ".builder" not in filename.lower():
-                filename += ".builder"
-                
-            # Pickle data
-            with open(filename, "wb") as fp:
-                # Version number
-                pickle.dump(self.version, fp)
-                
-                # Entry boxes
-                pickle.dump('entries', fp)
-                for item in self.entries:
-                    data = item.get()
-                    pickle.dump(data, fp)
-                    
-                # List boxes                     
-                pickle.dump('listboxes', fp)
-                for item in self.listboxes:
-                    data = list(item.get(0, END))
-                    pickle.dump(data, fp)
+        filename = asksaveasfilename(initialdir = "../../", title = "Save Builder Project as JSON", filetypes = PROJECT_FILE_FORMATS)
+        if not filename:
+            # No filename chosem
+            return
 
-                # Check buttons
-                pickle.dump('checkbuttons', fp)
-                for item in self.checkbuttons:
-                    data = item.state()
-                    pickle.dump(data, fp)
+        # Fix extension
+        if not filename.lower().endswith('.builder'):
+            filename += '.builder'
 
-                # Check buttons
-                pickle.dump('comboboxes', fp)
-                for item in self.comboboxes:
-                    data = item.get()
-                    pickle.dump(data, fp)
-                    
+        # Generates the JSON tree
+
+        def process_node(dest, orig):
+            for k, v in orig:
+                child = None
+                if isinstance(v, tuple):
+                    (kind, component) = v
+                    kind = kind.lower()
+
+                    if kind == 'entry':
+                        child = component.get()
+                    elif kind == 'listbox':
+                        child = list(component.get(0, END))
+                    elif kind == 'checkbutton':
+                        state = component.state()
+                        child = state[0] == 'selected' if state else False
+                    elif kind == 'combobox':
+                        child = component.get()
+                else:
+                    child = collections.OrderedDict()
+                    process_node(child, v)
+
+                dest[k] = child
+
+        structure_template = self.JsonStructureTemplate()
+        json_tree = collections.OrderedDict([
+            ('format', '8bit-Unity Project'),
+            ('formatVersion', self.version),
+        ])
+
+        process_node(json_tree, structure_template)
+
+        # Save the file
+        json_string = json.dumps(json_tree, indent=4)
+        with codecs.open(filename, "w", "utf-8") as fp:
+            fp.write(json_string)
+
     def FileExit(self):
         sys.exit()
         
+    def JsonStructureTemplate(self):        
+        return [
+            ('general', [
+                ('disk', ('entry', self.entry_Disk)),        
+                ('code', ('listbox', self.listbox_Code)),    
+                ('shared', ('listbox', self.listbox_Shared)),
+                ('charmap', ('listbox', self.listbox_Charmap)),
+            ]),
+            ('platform', [
+                ('Apple', [
+                    ('spriteFrames', ('entry', self.entry_AppleSpriteFrames)),
+                    ('spriteWidth', ('entry', self.entry_AppleSpriteWidth)),
+                    ('spriteHeight', ('entry', self.entry_AppleSpriteHeight)),
+                    ('bitmap', ('listbox', self.listbox_AppleBitmap)),
+                    ('sprites', ('listbox', self.listbox_AppleSprites)),
+                    ('music', ('listbox', self.listbox_AppleMusic)),
+                    ('chunks', ('listbox', self.listbox_AppleChunks)),
+                    ('charset', ('listbox', self.listbox_AppleCharset)),
+                ]),
+                ('Atari', [
+                    ('spriteFrames', ('entry', self.entry_AtariSpriteFrames)),
+                    ('spriteWidth', ('entry', self.entry_AtariSpriteWidth)),
+                    ('spriteHeight', ('entry', self.entry_AtariSpriteHeight)),
+                    ('bitmap', ('listbox', self.listbox_AtariBitmap)),
+                    ('sprites', ('listbox', self.listbox_AtariSprites)),
+                    ('music', ('listbox', self.listbox_AtariMusic)),
+                    ('chunks', ('listbox', self.listbox_AtariChunks)),
+                    ('charset', ('listbox', self.listbox_AtariCharset)),
+                    ('noText', ('Checkbutton', self.Checkbutton_AtariNoText)),
+                    ('diskSize', ('Combobox', self.Combobox_AtariDiskSize)),
+                ]),
+                ('C64', [
+                    ('spriteFrames', ('entry', self.entry_C64SpriteFrames)),
+                    ('spriteWidth', ('entry', self.entry_C64SpriteWidth)),
+                    ('spriteHeight', ('entry', self.entry_C64SpriteHeight)),
+                    ('bitmap', ('listbox', self.listbox_C64Bitmap)),
+                    ('sprites', ('listbox', self.listbox_C64Sprites)),
+                    ('music', ('listbox', self.listbox_C64Music)),
+                    ('chunks', ('listbox', self.listbox_C64Chunks)),
+                    ('charset', ('listbox', self.listbox_C64Charset)),
+                ]),
+                ('Lynx', [
+                    ('spriteFrames', ('entry', self.entry_LynxSpriteFrames)),
+                    ('spriteWidth', ('entry', self.entry_LynxSpriteWidth)),
+                    ('spriteHeight', ('entry', self.entry_LynxSpriteHeight)),
+                    ('musicMemory', ('entry', self.entry_LynxMusicMemory)),
+                    ('sharedMemory', ('entry', self.entry_LynxSharedMemory)),
+                    ('bitmap', ('listbox', self.listbox_LynxBitmap)),
+                    ('sprites', ('listbox', self.listbox_LynxSprites)),
+                    ('music', ('listbox', self.listbox_LynxMusic)),
+                    ('chunks', ('listbox', self.listbox_LynxChunks)),
+                    ('charset', ('listbox', self.listbox_LynxCharset)),
+                ]),
+                ('Oric', [
+                    ('spriteFrames', ('entry', self.entry_OricSpriteFrames)),
+                    ('spriteWidth', ('entry', self.entry_OricSpriteWidth)),
+                    ('spriteHeight', ('entry', self.entry_OricSpriteHeight)),
+                    ('dithering', ('entry', self.entry_OricDithering)),
+                    ('enforcedColors', ('entry', self.entry_OricEnforcedColors)),
+                    ('bitmap', ('listbox', self.listbox_OricBitmap)),
+                    ('sprites', ('listbox', self.listbox_OricSprites)),
+                    ('music', ('listbox', self.listbox_OricMusic)),
+                    ('chunks', ('listbox', self.listbox_OricChunks)),
+                    ('charset', ('listbox', self.listbox_OricCharset)),
+                ]),
+            ]),
+        ]
+
     def CodeAdd(self):
         filename = askopenfilename(initialdir = "../../", title = "Select Code File", filetypes = (("C files","*.c"),)) 
         if filename is not '':
@@ -562,7 +690,7 @@ class Application:
         # Build Single and Double Hires Scripts
         for target in ['64k', '128k']:
         
-            with open('../../'+buildFolder+'/'+diskname+"-apple"+target+".bat", "wb") as fp:
+            with open('../../' + buildFolder+'/'+diskname+"-apple"+target+".bat", "wb") as fp:
                 # Info
                 fp.write('echo off\n\n')
                 fp.write('mkdir apple\n')            
@@ -676,7 +804,7 @@ class Application:
         sprites = list(self.listbox_AtariSprites.get(0, END))
         chunks = list(self.listbox_AtariChunks.get(0, END))
         music = list(self.listbox_AtariMusic.get(0, END))
-        with open('../../'+buildFolder+'/'+diskname+"-atari.bat", "wb") as fp:
+        with open('../../' + buildFolder+'/'+diskname+"-atari.bat", "wb") as fp:
             # Info
             fp.write('echo off\n\n')
             fp.write('mkdir atari\n')            
@@ -791,7 +919,7 @@ class Application:
         sprites = list(self.listbox_C64Sprites.get(0, END))
         chunks = list(self.listbox_C64Chunks.get(0, END))
         music = list(self.listbox_C64Music.get(0, END))
-        with open('../../'+buildFolder+'/'+diskname+"-c64.bat", "wb") as fp:
+        with open('../../' + buildFolder+'/'+diskname+"-c64.bat", "wb") as fp:
             # Info
             fp.write('echo off\n\n')
             fp.write('setlocal enableextensions enabledelayedexpansion\n\n')
@@ -903,7 +1031,7 @@ class Application:
         sprites = list(self.listbox_LynxSprites.get(0, END))
         chunks = list(self.listbox_LynxChunks.get(0, END))
         music = list(self.listbox_LynxMusic.get(0, END))
-        with open('../../'+buildFolder+'/'+diskname+"-lynx.bat", "wb") as fp:
+        with open('../../' + buildFolder+'/'+diskname+"-lynx.bat", "wb") as fp:
             # Info
             fp.write('echo off\n\n')
             fp.write('setlocal enableextensions enabledelayedexpansion\n\n')
@@ -957,7 +1085,7 @@ class Application:
             # Chunks
             fp.write('set /a CHUNKNUM=0\n')
             if len(chunks) > 0:
-                fp.write('..\\..\\utils\\py27\\python ..\\..\\utils\\scripts\\ProcessChunks.py lynx ../../' + chunks[0] + ' ../../'+buildFolder + '/lynx/\n')
+                fp.write('..\\..\\utils\\py27\\python ..\\..\\utils\\scripts\\ProcessChunks.py lynx ../../' + chunks[0] + ' ../../' + buildFolder + '/lynx/\n')
                 fp.write('for /f "tokens=*" %%A in (chunks.lst) do set CHUNKNAMES=!CHUNKNAMES!_shkName!CHUNKNUM!,&&set /a CHUNKNUM+=1\n')
             fp.write('set /a FILENUM=!CHUNKNUM!+' + str(len(bitmaps)+len(charmaps)+len(charset)+len(music)+len(shared)) + '\n')
 
@@ -1159,11 +1287,13 @@ class Application:
             fp.write('echo --------------- COMPILE PROGRAM ---------------\n\n')
 
             # Build Unity Library
+            symbols = ' -D __MUSSIZE__='  + self.entry_LynxMusicMemory.get().replace('$','0x') + ' -D __SHRSIZE__='  + self.entry_LynxSharedMemory.get().replace('$','0x')
+            config  = ' -Wl -D,__MUSSIZE__='  + self.entry_LynxMusicMemory.get() + ',-D,__SHRSIZE__='  + self.entry_LynxSharedMemory.get()
             CList = ['bitmap.c', 'charmap.c', 'chunks.c', 'geom2d.c', 'hub.c', 'joystick.c', 'mouse.c', 'music.c', 'net-base.c', 'net-url.c', 'net-tcp.c', 'net-udp.c', 'net-web.c', 'pixel.c', 'print.c', 'scaling.c', 'sfx.c', 'sprites.c', 'widgets.c', 'Lynx\\display.c', 'Lynx\\files.c']
             SList = ['atan2.s', 'chars.s', 'tiles.s', 'Lynx\\header.s', 'Lynx\\scroll.s', 'Lynx\\serial.s', 'Lynx\\suzy.s']
                          
             for file in CList:
-                fp.write('utils\\cc65\\bin\\cc65 -Cl -O -t lynx -I unity unity\\' + file + '\n')
+                fp.write('utils\\cc65\\bin\\cc65 -Cl -O -t lynx' + symbols + ' -I unity unity\\' + file + '\n')
                 fp.write('utils\\cc65\\bin\\ca65 -t lynx --cpu 65SC02 unity\\' + file[0:-2] + '.s\n')
                 fp.write('del unity\\' + file[0:-2] + '.s\n')
 
@@ -1178,7 +1308,7 @@ class Application:
             fp.write('\n')
             
             # Compilation 
-            comp = 'utils\\cc65\\bin\\cl65 -o ' + buildFolder + '/' + diskname.lower() + '-lynx.lnx -m ' + buildFolder + '/' + diskname.lower() + '-lynx.map -Cl -O -t lynx -C ' + buildFolder + '/lynx/lynx.cfg -I unity '
+            comp = 'utils\\cc65\\bin\\cl65 -o ' + buildFolder + '/' + diskname.lower() + '-lynx.lnx -m ' + buildFolder + '/' + diskname.lower() + '-lynx.map -Cl -O -t lynx' + symbols + config + ' -C ' + buildFolder + '/lynx/lynx.cfg -I unity '
             for item in code:
                 comp += (item + ' ')
             for i in range(len(music)):
@@ -1202,7 +1332,7 @@ class Application:
         sprites = list(self.listbox_OricSprites.get(0, END))
         chunks = list(self.listbox_OricChunks.get(0, END))
         music = list(self.listbox_OricMusic.get(0, END))
-        with open('../../'+buildFolder+'/'+diskname+"-oric48k.bat", "wb") as fp:
+        with open('../../' + buildFolder+'/'+diskname+"-oric48k.bat", "wb") as fp:
             # Info
             fp.write('echo off\n\n')
             fp.write('setlocal enableextensions enabledelayedexpansion\n\n')
@@ -1215,19 +1345,16 @@ class Application:
             fp.write('cd utils\\scripts\\oric\n')
             for item in bitmaps:
                 fb = FileBase(item, '-oric.png')
-                if self.combobox_OricImageQuality.get() == 'Hires(Noisy)':
-                    fp.write('luajit PictOric.lua ' + self.entry_OricDithering.get() + ' ../../../' + item + ' ../../../'+buildFolder + '/oric/' + fb + '.dat\n')
-                else:
-                    fp.write('..\\..\\py27\\python OricBitmap.py ../../../' + item + ' ../../../'+buildFolder + '/oric/' + fb + '.dat\n')
-                fp.write('header -a0 ../../../'+buildFolder + '/oric/' + fb + '.dat ../../../'+buildFolder + '/oric/' + fb + '.img $A000\n')
+                fp.write('..\\..\\py27\\python OricBitmap.py ../../../' + item + ' ../../../' + buildFolder + '/oric/' + fb + '.dat ' + self.entry_OricDithering.get() + ' ' + self.entry_OricEnforcedColors.get() + '\n')
+                fp.write('header -a0 ../../../' + buildFolder + '/oric/' + fb + '.dat ../../../' + buildFolder + '/oric/' + fb + '.img $A000\n')
                 
             if len(charset) > 0:
                 fb = FileBase(charset[0], '-oric.png')
-                fp.write('..\\..\\py27\python OricCharset.py ' + self.combobox_OricImageQuality.get() + ' ' + self.entry_OricDithering.get() +  ' ../../../' + charset[0] + ' ../../../'+buildFolder + '/oric/' + fb + '.dat\n') 
-                fp.write('header -a0 ../../../'+buildFolder + '/oric/' + fb + '.dat ../../../'+buildFolder + '/oric/' + fb + '.chr $A000\n')
+                fp.write('..\\..\\py27\python OricCharset.py ../../../' + charset[0] + ' ../../../' + buildFolder + '/oric/' + fb + '.dat ' + self.entry_OricDithering.get() +  '\n') 
+                fp.write('header -a0 ../../../' + buildFolder + '/oric/' + fb + '.dat ../../../' + buildFolder + '/oric/' + fb + '.chr $A000\n')
                 
             if len(chunks) > 0:
-                fp.write('..\\..\\py27\\python ProcessChunks.py ' + self.combobox_OricImageQuality.get() + ' ' + self.entry_OricDithering.get() + ' ../../../' + chunks[0] + ' ../../../'+buildFolder + '/oric/\n')
+                fp.write('..\\..\\py27\\python ProcessChunks.py ../../../' + chunks[0] + ' ../../../' + buildFolder + '/oric/ ' + self.entry_OricDithering.get() + '\n')
                 fp.write('for /f "tokens=*" %%A in (..\\..\\..\\' + buildFolder + '\\oric\\chunks.lst) do header -a0 ../../../%%A ../../../%%A $8000\n')
             fp.write('cd ..\\..\\..\n')
 
